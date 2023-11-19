@@ -47,7 +47,7 @@ func getID(r *http.Request) (int, error) {
 
 func createJWTToken(account *Account) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"account_id": account.ID,
+		"account_number": account.Number,
 		"exp":        time.Now().Add(time.Hour * 24).Unix(),
 	})
 
@@ -56,15 +56,41 @@ func createJWTToken(account *Account) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
-func withJWTAuth(handleFunc http.HandlerFunc) http.HandlerFunc {
+func withJWTAuth(handleFunc http.HandlerFunc, s Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Calling JWT auth middleware")
 
 		tokenString := r.Header.Get("x-jwt-token")
-
-		// fmt.Println("Token string =>", tokenString)
 		
-		_, err := validateJWT(tokenString)
+		token, err := validateJWT(tokenString)
+
+		if err != nil {
+			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "Invalid token"})
+			return
+		}
+
+		if !token.Valid {
+			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "Permission denied"})
+			return
+		}
+
+		
+		claims := token.Claims.(jwt.MapClaims)
+		
+		fmt.Println(claims)
+
+		userID, err := getID(r)
+		if err != nil {
+			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "Permission denied"})
+			return
+		}
+
+		account, err := s.GetAccountById(userID)
+
+		if account.Number != int64(claims["account_number"].(float64)) {
+			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "Permission denied"})
+			return
+		}
 
 		if err != nil {
 			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "Invalid token"})

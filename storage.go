@@ -21,7 +21,12 @@ type PostgresStore struct {
 }
 
 func NewPostgresStore() (*PostgresStore, error) {
-	connStr := os.Getenv("DATABASE_URL")
+
+	db_url := os.Getenv("DATABASE_URL")
+
+	fmt.Println(db_url)
+
+	connStr := "user=postgres dbname=go-bank password=admin sslmode=disable"
 
 	db, err := sql.Open("postgres", connStr)
 

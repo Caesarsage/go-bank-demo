@@ -25,7 +25,7 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHTTPHandlerFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandlerFunc(s.handleAccountById)))
+	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandlerFunc(s.handleAccountById), s.store))
 
 	router.HandleFunc("/transfer", makeHTTPHandlerFunc(s.handleTransfer))
 
@@ -66,7 +66,7 @@ func (s *APIServer) handleAccountById(w http.ResponseWriter, r *http.Request) er
 		account, err := s.store.GetAccountById(id)
 
 		if err != nil {
-			return err
+			return WriteJSON(w, http.StatusNotFound, ApiError{Error: "User not found"})
 		}
 
 		return WriteJSON(w, http.StatusOK, account)
