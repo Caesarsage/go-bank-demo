@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type APIServer struct {
@@ -25,14 +26,56 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHTTPHandlerFunc(s.handleAccount))
+	router.HandleFunc("/login", makeHTTPHandlerFunc(s.handleLogin))
+
 	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandlerFunc(s.handleAccountById), s.store))
 
 	router.HandleFunc("/transfer", makeHTTPHandlerFunc(s.handleTransfer))
 
-
 	log.Println("Starting APIServer...")
 
 	http.ListenAndServe(s.listenAddr, router)
+}
+
+func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == "POST" {
+		loginRequest := &LoginRequest{}
+
+		if err := json.NewDecoder(r.Body).Decode(&loginRequest); err != nil {
+			return err
+		}
+
+		acc, err := s.store.GetAccountByEmail(loginRequest.Email)
+
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("Account =>", acc)
+
+		// compare password
+		if err := bcrypt.CompareHashAndPassword([]byte(acc.HashPassword), []byte(loginRequest.Password)); err != nil {
+			return WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "Invalid credentials"})
+		}
+
+		// create JWT token
+		
+	tokenString, err := createJWTToken(acc)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("JWT Token string =>", tokenString)
+
+	payload := &LoginResponse{
+		Token: tokenString,
+		Email: acc.Email,
+		Id: acc.ID,
+	}
+		return WriteJSON(w, http.StatusOK, payload)
+	}
+	return fmt.Errorf("method not allowed %s", r.Method)
 }
 
 func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error {
@@ -56,7 +99,7 @@ func (s *APIServer) handleGetAccounts(w http.ResponseWriter, e *http.Request) er
 }
 
 func (s *APIServer) handleAccountById(w http.ResponseWriter, r *http.Request) error {
-	if r.Method == "GET"{
+	if r.Method == "GET" {
 		id, err := getID(r)
 
 		if err != nil {
@@ -79,28 +122,30 @@ func (s *APIServer) handleAccountById(w http.ResponseWriter, r *http.Request) er
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
-	createAccountReq := new(CreateAccountRequest)
+	req := new(CreateAccountRequest)
 	// OR
 	// createAccountReq := &CreateAccountRequest{}
-	if err := json.NewDecoder(r.Body).Decode(&createAccountReq); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
 		return err
 	}
 
-	account := NewAccount(createAccountReq.FirstName, createAccountReq.LastName)
+	account, err := NewAccount(
+		req.FirstName, 
+		req.LastName, 
+		req.Email, 
+		req.Password,
+	)
+
 	
-	if err := s.store.CreateAccount(account); err != nil {
-		return err
-	}
-
-	tokenString, err := createJWTToken(account)
-
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("JWT Token string =>", tokenString)
+	if err := s.store.CreateAccount(account); err != nil {
+		return err
+	}
 
-	return WriteJSON(w,http.StatusOK, account)
+	return WriteJSON(w, http.StatusOK, account)
 }
 
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
@@ -116,8 +161,8 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 		return err
 	}
 
-	return WriteJSON(w, http.StatusOK, map[string]int{"deleted": id })
-		
+	return WriteJSON(w, http.StatusOK, map[string]int{"deleted": id})
+
 }
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
@@ -129,4 +174,3 @@ func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error
 
 	return WriteJSON(w, http.StatusOK, transferRequest)
 }
-

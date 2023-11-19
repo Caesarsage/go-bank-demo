@@ -4,3 +4,5 @@ run: build
 	@./bin/gobank
 test:
 	@go-test -v ./..
+seed:
+	@./bin/go-bank --seed true

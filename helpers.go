@@ -47,8 +47,9 @@ func getID(r *http.Request) (int, error) {
 
 func createJWTToken(account *Account) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"account_number": account.Number,
-		"exp":        time.Now().Add(time.Hour * 24).Unix(),
+		"id": account.ID,
+		"email":					account.Email,
+		"exp":            time.Now().Add(time.Hour * 24).Unix(),
 	})
 
 	secret := os.Getenv("JWT_SECRET")
@@ -56,12 +57,13 @@ func createJWTToken(account *Account) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
-func withJWTAuth(handleFunc http.HandlerFunc, s Storage) http.HandlerFunc {
+// Middleware
+func withJWTAuth(handleFunc http.HandlerFunc, s Storage) (http.HandlerFunc) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("Calling JWT auth middleware")
 
 		tokenString := r.Header.Get("x-jwt-token")
-		
+
 		token, err := validateJWT(tokenString)
 
 		if err != nil {
@@ -74,9 +76,8 @@ func withJWTAuth(handleFunc http.HandlerFunc, s Storage) http.HandlerFunc {
 			return
 		}
 
-		
 		claims := token.Claims.(jwt.MapClaims)
-		
+
 		fmt.Println(claims)
 
 		userID, err := getID(r)
@@ -87,7 +88,7 @@ func withJWTAuth(handleFunc http.HandlerFunc, s Storage) http.HandlerFunc {
 
 		account, err := s.GetAccountById(userID)
 
-		if account.Number != int64(claims["account_number"].(float64)) {
+		if int64(account.ID) != int64(claims["id"].(float64)) {
 			WriteJSON(w, http.StatusUnauthorized, ApiError{Error: "Permission denied"})
 			return
 		}
@@ -100,14 +101,25 @@ func withJWTAuth(handleFunc http.HandlerFunc, s Storage) http.HandlerFunc {
 }
 
 func validateJWT(tokenString string) (*jwt.Token, error) {
-	secret := os.Getenv("JWT_SECRET") 
+	secret := os.Getenv("JWT_SECRET")
 	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
 		}
-	
+
 		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
 		return []byte(secret), nil
 	})
 }
+
+// func generateAccountNumber() int {
+// 	b := make([]byte, 13) // adjust size for desired length
+// 	_, err := rand.Read(b)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	number := fmt.Sprintf("%x", b)
+// 	return number
+// }
+
